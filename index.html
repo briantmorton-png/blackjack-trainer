@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BJ Trainer">
+<meta name="theme-color" content="#0b3d24">
+<title>Blackjack Trainer</title>
+<!-- SVG fallback icon; replaced at runtime by a canvas-rendered PNG (iOS requires PNG) -->
+<link id="touchIcon" rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%230b3d24'/%3E%3Ctext x='90' y='132' font-size='130' text-anchor='middle' fill='white'%3E%E2%99%A0%3C/text%3E%3C/svg%3E">
+<link id="manifestLink" rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Blackjack%20Trainer%22%2C%22short_name%22%3A%22BJ%20Trainer%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230b3d24%22%2C%22theme_color%22%3A%22%230b3d24%22%2C%22start_url%22%3A%22.%22%7D">
+<style>
+  :root { --felt:#0b3d24; --felt2:#145c37; --nav:rgba(5,25,15,.92); }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; overflow:hidden; overscroll-behavior:none; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;
+    background:radial-gradient(ellipse at center,var(--felt2),var(--felt));
+    color:#fff; -webkit-user-select:none; user-select:none;
+    -webkit-touch-callout:none; transition:background-color .15s;
+  }
+  button,input,.tab,.tappable,[onclick] {
+    touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  }
+  * { -webkit-tap-highlight-color:transparent; }
+
+  /* Flash overlay */
+  #flash { position:fixed; inset:0; pointer-events:none; opacity:0; z-index:50; transition:opacity .25s; }
+  #flash.green { background:rgba(40,200,90,.45); opacity:1; transition:none; }
+  #flash.red   { background:rgba(230,40,40,.5); opacity:1; transition:none; }
+
+  /* Nav */
+  nav {
+    position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:4px;
+    padding:calc(env(safe-area-inset-top) + 8px) 8px 8px; background:var(--nav);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-bottom:1px solid rgba(255,255,255,.1);
+  }
+  .tabs { display:flex; flex:1; gap:4px; }
+  .tab {
+    flex:1; padding:10px 4px; font-size:13px; font-weight:600; color:#cfe;
+    background:rgba(255,255,255,.06); border:none; border-radius:8px;
+  }
+  .tab.active { background:#e8c547; color:#222; }
+
+  /* Discard tray */
+  .tray {
+    width:34px; height:46px; margin-left:6px; position:relative; flex-shrink:0;
+    border-radius:4px; overflow:hidden;
+    background:linear-gradient(135deg,rgba(255,255,255,.35),rgba(255,255,255,.08));
+    border:1px solid rgba(255,255,255,.55);
+    box-shadow:inset 0 0 6px rgba(255,255,255,.4),0 2px 6px rgba(0,0,0,.4);
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  }
+  .played-cards {
+    position:absolute; left:3px; right:3px; bottom:2px; height:0%;
+    background:repeating-linear-gradient(0deg,#f4f4f4 0 1px,#b22 1px 2px);
+    border-radius:2px; transition:height .3s;
+  }
+  .tray::after { /* cut-card line at 75% */
+    content:""; position:absolute; left:0; right:0; bottom:75%; height:1px; background:#e8c547;
+  }
+
+  main { height:calc(100% - 66px - env(safe-area-inset-top)); position:relative; }
+  .view { display:none; height:100%; flex-direction:column; padding:12px; }
+  .view.active { display:flex; }
+
+  /* Cards */
+  .label { font-size:12px; letter-spacing:2px; text-transform:uppercase; opacity:.7; text-align:center; margin:8px 0 6px; }
+  .row { display:flex; justify-content:center; gap:10px; }
+  .card {
+    width:84px; height:120px; background:#fff; border-radius:9px; position:relative;
+    box-shadow:0 4px 10px rgba(0,0,0,.45); color:#111; font-weight:700;
+  }
+  .card.big { width:140px; height:200px; border-radius:14px; }
+  .card .c { position:absolute; line-height:1; text-align:center; font-size:18px; }
+  .card .tl { top:6px; left:7px; } .card .br { bottom:6px; right:7px; transform:rotate(180deg); }
+  .card .mid { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:46px; }
+  .card.big .c { font-size:28px; } .card.big .mid { font-size:80px; }
+  .red { color:#c8102e; }
+  .info { text-align:center; font-size:14px; opacity:.85; margin-top:10px; min-height:20px; }
+
+  /* Action grid */
+  .actions {
+    margin-top:auto; display:grid; grid-template-columns:1fr 1fr; gap:10px;
+    padding-bottom:calc(env(safe-area-inset-bottom) + 6px);
+  }
+  .actions button {
+    height:84px; font-size:24px; font-weight:800; letter-spacing:1px; color:#fff;
+    border:none; border-radius:16px; box-shadow:0 4px 0 rgba(0,0,0,.35);
+  }
+  .actions button:active { transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,.35); }
+  .hit{background:#d63031}.stand{background:#0984e3}.double{background:#00a65a}.split{background:#d4a017;color:#222!important}
+
+  /* Wrong answer freeze overlay */
+  #wrong {
+    position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
+    flex-direction:column; background:rgba(60,0,0,.75); text-align:center; padding:24px;
+  }
+  #wrong.show { display:flex; }
+  #wrong h2 { font-size:22px; margin-bottom:10px; } #wrong .ans { font-size:44px; font-weight:900; color:#e8c547; margin:8px 0 18px; }
+  .stats { display:flex; justify-content:space-around; font-size:13px; opacity:.85; }
+
+  .stats { align-items:center; }
+  .revBtn { background:rgba(255,255,255,.15); color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:13px; font-weight:600; }
+  #review { position:fixed; inset:0; z-index:45; display:none; flex-direction:column; background:rgba(5,25,15,.97);
+    padding:calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px); }
+  #review.show { display:flex; }
+  #review header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  #review h2 { font-size:20px; }
+  #review .sum { font-size:13px; opacity:.8; margin-bottom:8px; }
+  #errList { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .err { background:rgba(255,255,255,.07); border-radius:10px; padding:10px; margin-bottom:8px; font-size:14px; }
+  .err .top { display:flex; justify-content:space-between; font-weight:700; margin-bottom:4px; }
+  .err .t { opacity:.6; font-size:12px; font-weight:400; }
+  .err .bad { color:#f66; } .err .ok { color:#5f5; }
+  .empty { text-align:center; opacity:.6; margin-top:40px; }
+  #review .bar { display:flex; gap:8px; }
+  #review .bar button { flex:1; height:52px; border:none; border-radius:12px; font-size:16px; font-weight:700; }
+
+  /* Count drill */
+  .ctrl { margin-top:auto; padding-bottom:calc(env(safe-area-inset-bottom) + 6px); }
+  .ctrl input[type=range] { width:100%; height:36px; accent-color:#e8c547; }
+  .btn { width:100%; height:64px; border:none; border-radius:14px; font-size:20px; font-weight:800; margin-top:10px; }
+  .btn.primary{background:#e8c547;color:#222}.btn.secondary{background:rgba(255,255,255,.15);color:#fff}
+  .result { text-align:center; font-size:16px; min-height:48px; margin-top:12px; line-height:1.5; }
+  .ok{color:#5f5}.bad{color:#f66}
+
+  /* Betting lock */
+  .locked { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.55); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); font-size:20px; font-weight:700; gap:12px; }
+  .locked .lock { font-size:60px; }
+</style>
+</head>
+<body>
+<div id="flash"></div>
+
+<nav>
+  <div class="tabs">
+    <button class="tab active" data-view="strategy">Basic Strategy</button>
+    <button class="tab" data-view="count">Count Practice</button>
+    <button class="tab" data-view="betting">Betting</button>
+  </div>
+  <div class="tray" title="Discard tray"><div class="played-cards" id="played"></div></div>
+</nav>
+
+<main>
+  <!-- MODE 1 -->
+  <section class="view active" id="strategy">
+    <div class="stats"><span>Hands: <b id="hands">0</b></span><span>Errors: <b id="errs">0</b></span><span>Accuracy: <b id="acc">–</b></span><button class="revBtn" id="reviewBtn">Review</button></div>
+    <div class="label">Dealer</div>
+    <div class="row" id="dealerRow"></div>
+    <div class="label">Player</div>
+    <div class="row" id="playerRow"></div>
+    <div class="info" id="handInfo"></div>
+    <div class="actions">
+      <button class="hit" data-act="H">HIT</button>
+      <button class="stand" data-act="S">STAND</button>
+      <button class="double" data-act="D">DOUBLE</button>
+      <button class="split" data-act="P">SPLIT</button>
+    </div>
+  </section>
+
+  <!-- MODE 2 -->
+  <section class="view" id="count">
+    <div class="label">Count the cards</div>
+    <div class="row" id="countRow" style="min-height:200px;align-items:center"></div>
+    <div class="result" id="countResult"></div>
+    <div class="ctrl">
+      <div class="label">Speed: <span id="speedLbl">1.0</span>s per card</div>
+      <input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0" style="direction:rtl">
+      <button class="btn primary" id="startBtn">Start Drill</button>
+      <button class="btn secondary" id="quizBtn">Pause &amp; Quiz</button>
+    </div>
+  </section>
+
+  <!-- BETTING -->
+  <section class="view" id="betting">
+    <div class="locked"><div class="lock">&#128274;</div>Coming Soon for v1.0</div>
+  </section>
+</main>
+
+<div id="wrong" class="tappable">
+  <h2>Incorrect</h2>
+  <div id="wrongDetail"></div>
+  <div class="ans" id="wrongAns"></div>
+  <div style="opacity:.7">Tap anywhere to continue</div>
+</div>
+
+<div id="review">
+  <header><h2>Error Review</h2></header>
+  <div class="sum" id="revSum"></div>
+  <div id="errList"></div>
+  <div class="bar">
+    <button id="revClear" style="background:#d63031;color:#fff">Reset Stats</button>
+    <button id="revClose" style="background:#e8c547;color:#222">Close</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- PWA icon: render PNG via canvas (iOS ignores SVG touch icons) ---------- */
+try {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 180;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#0b3d24'; g.fillRect(0, 0, 180, 180);
+  g.fillStyle = '#fff'; g.font = 'bold 140px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('\u2660', 90, 98);
+  const png = cv.toDataURL('image/png');
+  document.getElementById('touchIcon').href = png;
+  const manifest = { name:'Blackjack Trainer', short_name:'BJ Trainer', display:'standalone',
+    background_color:'#0b3d24', theme_color:'#0b3d24', start_url:location.href.split('#')[0],
+    icons:[{ src:png, sizes:'180x180', type:'image/png' }] };
+  document.getElementById('manifestLink').href =
+    'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(manifest));
+} catch (e) {}
+
+/* ---------- Shoe ---------- */
+const DECKS = 6, SHOE_SIZE = 52 * DECKS, CUT = Math.round(SHOE_SIZE * 0.75); // 234 dealt, 78 remain
+const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+const SUITS = [{ k:'S', e:'&spades;', red:false }, { k:'H', e:'&hearts;', red:true },
+               { k:'D', e:'&diams;', red:true },  { k:'C', e:'&clubs;', red:false }];
+
+function bjValue(r) { return r === 'A' ? 11 : ['10','J','Q','K'].includes(r) ? 10 : +r; }
+function hiLo(r) { const v = bjValue(r); return v <= 6 ? 1 : v >= 10 ? -1 : 0; }
+
+// Unbiased random int in [0, n) via Web Crypto with rejection sampling
+function cryptoInt(n) {
+  const buf = new Uint32Array(1), limit = Math.floor(0x100000000 / n) * n;
+  let x; do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+  return x % n;
+}
+
+const shoe = { cards: [], pos: 0, running: 0 };
+function newShoe() {
+  const c = [];
+  for (let d = 0; d < DECKS; d++) for (const s of SUITS) for (const r of RANKS)
+    c.push({ rank:r, suit:s.k, entity:s.e, red:s.red, value:bjValue(r), count:hiLo(r) });
+  for (let i = c.length - 1; i > 0; i--) { const j = cryptoInt(i + 1); [c[i], c[j]] = [c[j], c[i]]; }
+  shoe.cards = c; shoe.pos = 0; shoe.running = 0; updateTray();
+}
+function draw() {
+  const card = shoe.cards[shoe.pos++];
+  shoe.running += card.count; updateTray(); return card;
+}
+const atCut = () => shoe.pos >= CUT;
+const remaining = () => SHOE_SIZE - shoe.pos;
+function updateTray() { document.getElementById('played').style.height = (shoe.pos / SHOE_SIZE * 100) + '%'; }
+
+function cardHTML(c, big) {
+  const cls = c.red ? ' red' : '';
+  return `<div class="card${big ? ' big' : ''}"><div class="c tl${cls}">${c.rank}<br>${c.entity}</div>` +
+         `<div class="mid${cls}">${c.entity}</div><div class="c br${cls}">${c.rank}<br>${c.entity}</div></div>`;
+}
+
+/* ---------- Flash ---------- */
+const flashEl = document.getElementById('flash');
+function flash(color) {
+  flashEl.className = color;
+  requestAnimationFrame(() => requestAnimationFrame(() => { flashEl.className = ''; }));
+}
+
+/* ---------- Strategy table: 6D, S17, DAS. Columns = dealer 2..10, A ---------- */
+// H=Hit S=Stand D=Double P=Split
+const DEALER = ['2','3','4','5','6','7','8','9','10','A'];
+const row = s => Object.fromEntries(s.split(' ').map((a, i) => [DEALER[i], a]));
+const STRATEGY = {
+  pairs: {
+    'A':  row('P P P P P P P P P P'),
+    '10': row('S S S S S S S S S S'),
+    '9':  row('P P P P P S P P S S'),
+    '8':  row('P P P P P P P P P P'),
+    '7':  row('P P P P P P H H H H'),
+    '6':  row('P P P P P H H H H H'),
+    '5':  row('D D D D D D D D H H'),
+    '4':  row('H H H P P H H H H H'),
+    '3':  row('P P P P P P H H H H'),
+    '2':  row('P P P P P P H H H H')
+  },
+  soft: { // keyed by total (A + x)
+    '20': row('S S S S S S S S S S'),
+    '19': row('S S S S S S S S S S'),
+    '18': row('S D D D D S S H H H'),
+    '17': row('H D D D D H H H H H'),
+    '16': row('H H D D D H H H H H'),
+    '15': row('H H D D D H H H H H'),
+    '14': row('H H H D D H H H H H'),
+    '13': row('H H H D D H H H H H')
+  },
+  hard: {
+    '17': row('S S S S S S S S S S'),
+    '16': row('S S S S S H H H H H'),
+    '15': row('S S S S S H H H H H'),
+    '14': row('S S S S S H H H H H'),
+    '13': row('S S S S S H H H H H'),
+    '12': row('H H S S S H H H H H'),
+    '11': row('D D D D D D D D D H'),
+    '10': row('D D D D D D D D H H'),
+    '9':  row('H D D D D H H H H H'),
+    '8':  row('H H H H H H H H H H')
+  }
+};
+const ACT_NAME = { H:'HIT', S:'STAND', D:'DOUBLE', P:'SPLIT' };
+const key = c => c.value === 11 ? 'A' : String(c.value);
+
+function evaluate(p1, p2, up) {
+  const d = key(up);
+  // 1. Pairs
+  if (p1.value === p2.value) {
+    const k = key(p1);
+    return { type:'Pair', label:`Pair of ${k}s`, action:STRATEGY.pairs[k][d] };
+  }
+  // 2. Soft
+  if (p1.value === 11 || p2.value === 11) {
+    const total = p1.value + p2.value;
+    return { type:'Soft', label:`Soft ${total}`, action:STRATEGY.soft[Math.min(total, 20)][d] };
+  }
+  // 3. Hard
+  const total = p1.value + p2.value;
+  const k = Math.max(8, Math.min(17, total));
+  return { type:'Hard', label:`Hard ${total}`, action:STRATEGY.hard[k][d] };
+}
+
+/* ---------- Mode 1 ---------- */
+const errors = []; let handsPlayed = 0;
+let hand = null, frozen = false;
+
+function dealHand() {
+  if (atCut() || remaining() < 3) newShoe();
+  const p1 = draw(), up = draw(), p2 = draw();
+  hand = { p1, p2, up, ...evaluate(p1, p2, up) };
+  document.getElementById('dealerRow').innerHTML = cardHTML(up);
+  document.getElementById('playerRow').innerHTML = cardHTML(p1) + cardHTML(p2);
+  document.getElementById('handInfo').textContent = hand.label + ' vs ' + key(up);
+}
+function updateStats() {
+  document.getElementById('hands').textContent = handsPlayed;
+  document.getElementById('errs').textContent = errors.length;
+  document.getElementById('acc').textContent = handsPlayed
+    ? Math.round((handsPlayed - errors.length) / handsPlayed * 100) + '%' : '–';
+}
+function answer(act) {
+  if (frozen || !hand) return;
+  handsPlayed++;
+  if (act === hand.action) {
+    flash('green'); updateStats(); dealHand();
+  } else {
+    errors.push({
+      timestamp: new Date().toISOString(), handType: hand.type,
+      playerHand: `${hand.p1.rank}${hand.p1.suit},${hand.p2.rank}${hand.p2.suit}`,
+      dealerUpcard: hand.up.rank, userAction: ACT_NAME[act], correctAction: ACT_NAME[hand.action]
+    });
+    flash('red'); updateStats(); frozen = true;
+    document.getElementById('wrongDetail').textContent =
+      `${hand.label} vs dealer ${key(hand.up)} — you chose ${ACT_NAME[act]}. Correct play:`;
+    document.getElementById('wrongAns').textContent = ACT_NAME[hand.action];
+    setTimeout(() => document.getElementById('wrong').classList.add('show'), 120);
+  }
+}
+document.querySelectorAll('.actions button').forEach(b =>
+  b.addEventListener('click', () => answer(b.dataset.act)));
+document.getElementById('wrong').addEventListener('click', () => {
+  document.getElementById('wrong').classList.remove('show');
+  frozen = false; dealHand();
+});
+window.bjErrors = errors; // inspect from console
+
+/* ---------- Error review screen ---------- */
+const reviewEl = document.getElementById('review');
+function renderReview() {
+  const byType = { Pair:0, Soft:0, Hard:0 };
+  errors.forEach(e => byType[e.handType]++);
+  document.getElementById('revSum').textContent =
+    `${handsPlayed} hands · ${errors.length} errors · Pair ${byType.Pair} / Soft ${byType.Soft} / Hard ${byType.Hard}`;
+  const list = document.getElementById('errList');
+  if (!errors.length) { list.innerHTML = '<div class="empty">No mistakes yet. Nice!</div>'; return; }
+  list.innerHTML = errors.slice().reverse().map(e => `
+    <div class="err">
+      <div class="top"><span>${e.handType}: ${e.playerHand} vs ${e.dealerUpcard}</span>
+        <span class="t">${new Date(e.timestamp).toLocaleTimeString()}</span></div>
+      You: <span class="bad">${e.userAction}</span> · Correct: <span class="ok">${e.correctAction}</span>
+    </div>`).join('');
+}
+document.getElementById('reviewBtn').addEventListener('click', () => { renderReview(); reviewEl.classList.add('show'); });
+document.getElementById('revClose').addEventListener('click', () => reviewEl.classList.remove('show'));
+document.getElementById('revClear').addEventListener('click', () => {
+  if (!confirm('Reset hands played and clear all errors?')) return;
+  errors.length = 0; handsPlayed = 0; updateStats(); renderReview();
+});
+
+/* ---------- Mode 2 ---------- */
+const speedEl = document.getElementById('speed'), speedLbl = document.getElementById('speedLbl');
+const startBtn = document.getElementById('startBtn'), resEl = document.getElementById('countResult');
+let timer = null;
+speedEl.addEventListener('input', () => {
+  speedLbl.textContent = (+speedEl.value).toFixed(1);
+  if (timer) { clearInterval(timer); timer = setInterval(tick, speedEl.value * 1000); }
+});
+function tick() {
+  if (atCut()) { stopDrill(); quiz(true); return; }
+  document.getElementById('countRow').innerHTML = cardHTML(draw(), true);
+}
+function startDrill() {
+  if (atCut()) newShoe();
+  resEl.innerHTML = ''; startBtn.textContent = 'Running…'; startBtn.disabled = true;
+  tick(); timer = setInterval(tick, speedEl.value * 1000);
+}
+function stopDrill() {
+  clearInterval(timer); timer = null; startBtn.textContent = 'Resume Drill'; startBtn.disabled = false;
+}
+function parseNum(s) { if (s === null) return null; const n = parseFloat(String(s).replace('+', '')); return isNaN(n) ? NaN : n; }
+function quiz(cutReached) {
+  stopDrill();
+  if (shoe.pos === 0) return;
+  const rc = shoe.running;
+  const decksLeft = remaining() / 52;
+  const tc = Math.round((rc / decksLeft) * 2) / 2;
+  setTimeout(() => {
+    const a1 = parseNum(prompt('What is the Running Count?'));
+    if (a1 === null) return;
+    const a2 = parseNum(prompt('What is the True Count? (Round to nearest half)'));
+    if (a2 === null) return;
+    const ok1 = a1 === rc, ok2 = a2 === tc;
+    flash(ok1 && ok2 ? 'green' : 'red');
+    const fmt = n => (n > 0 ? '+' : '') + n;
+    resEl.innerHTML =
+      `<div class="${ok1 ? 'ok' : 'bad'}">${ok1 ? '✓' : '✗'} Running Count: ${fmt(rc)} (you: ${isNaN(a1) ? '?' : fmt(a1)})</div>` +
+      `<div class="${ok2 ? 'ok' : 'bad'}">${ok2 ? '✓' : '✗'} True Count: ${fmt(tc)} (you: ${isNaN(a2) ? '?' : fmt(a2)})</div>` +
+      `<div style="opacity:.7;font-size:13px">${shoe.pos} dealt · ${decksLeft.toFixed(2)} decks left</div>`;
+    if (cutReached) { newShoe(); startBtn.textContent = 'Start Drill'; resEl.innerHTML += '<div style="opacity:.7;font-size:13px">Cut card reached — shoe reshuffled.</div>'; }
+  }, 60);
+}
+startBtn.addEventListener('click', startDrill);
+document.getElementById('quizBtn').addEventListener('click', () => quiz(false));
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  if (timer) stopDrill();
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === t.dataset.view));
+}));
+
+newShoe(); dealHand();
+})();
+</script>
+</body>
+</html>
