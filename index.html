@@ -147,9 +147,13 @@
   .stats { flex-wrap:wrap; gap:6px 10px; justify-content:space-between; font-size:12px; }
   .pips { left:29%; right:29%; top:16%; bottom:16%; }
   .tab.active { background:var(--accent); color:var(--accentTxt); border-color:transparent; }
-  .tray { background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.03));
+  .tray { width:68px; height:92px; border-radius:8px; margin-left:8px;
+          background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.03));
           border:1px solid rgba(255,255,255,.22); box-shadow:inset 0 0 6px rgba(255,255,255,.12),0 2px 6px rgba(0,0,0,.5); }
-  .played-cards { background:repeating-linear-gradient(0deg,#e6edf3 0 1px,#3a4350 1px 2px); }
+  .played-cards { background:repeating-linear-gradient(0deg,#e6edf3 0 1px,#3a4350 1px 2px); left:6px; right:6px; bottom:4px; border-radius:3px; }
+  body { display:flex; flex-direction:column; }
+  nav { flex-shrink:0; }
+  main { flex:1; height:auto; min-height:0; }
   .tray::after { background:var(--accent); }
   .label { color:var(--muted); opacity:1; font-weight:600; }
   .info { color:var(--muted); opacity:1; }
@@ -537,9 +541,12 @@ document.getElementById('quizBtn').addEventListener('click', () => quiz(false));
 document.getElementById('resetCountBtn').addEventListener('click', () => {
   if (timer) stopDrill();
   shoe.running = 0;
+  const reshuffled = confirm('Count reset to 0.\n\nAlso reset the shoe (fresh shuffle)?\n\nOK = New shoe   ·   Cancel = Keep current shoe');
+  if (reshuffled) newShoe();
   startBtn.textContent = 'Start Drill';
   document.getElementById('countRow').innerHTML = '';
-  resEl.innerHTML = '<div style="opacity:.7;font-size:13px">Count reset to 0. The shoe continues from where you left off.</div>';
+  resEl.innerHTML = `<div style="opacity:.7;font-size:13px">Count reset to 0. ${reshuffled
+    ? 'Fresh 6-deck shoe shuffled.' : 'The shoe continues from where you left off.'}</div>`;
 });
 
 /* ---------- Tabs ---------- */
