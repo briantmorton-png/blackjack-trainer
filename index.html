@@ -246,7 +246,10 @@
       <div class="label">Speed: <span id="speedLbl">1.0</span>s per card</div>
       <input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0" style="direction:rtl">
       <button class="btn primary" id="startBtn">Start Drill</button>
-      <button class="btn secondary" id="quizBtn">Pause &amp; Quiz</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn secondary" id="quizBtn">Pause &amp; Quiz</button>
+        <button class="btn secondary" id="resetCountBtn">Reset Count</button>
+      </div>
     </div>
   </section>
 
@@ -531,6 +534,13 @@ function quiz(cutReached) {
 }
 startBtn.addEventListener('click', startDrill);
 document.getElementById('quizBtn').addEventListener('click', () => quiz(false));
+document.getElementById('resetCountBtn').addEventListener('click', () => {
+  if (timer) stopDrill();
+  shoe.running = 0;
+  startBtn.textContent = 'Start Drill';
+  document.getElementById('countRow').innerHTML = '';
+  resEl.innerHTML = '<div style="opacity:.7;font-size:13px">Count reset to 0. The shoe continues from where you left off.</div>';
+});
 
 /* ---------- Tabs ---------- */
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
