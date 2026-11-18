@@ -210,6 +210,22 @@
   #playerRow.overlap { gap:0; padding-top:4px; }
   #playerRow.overlap .card + .card { margin-left:-56px; margin-top:26px; transform:rotate(4deg); }
   #playerRow.overlap .card:first-child { transform:rotate(-3deg); }
+
+  /* Toolbar + End Session modal */
+  .toolbar { display:flex; gap:8px; justify-content:center; margin-top:8px; }
+  .toolbar .revBtn { flex:1; max-width:130px; padding:8px 6px; }
+  .endBtn { border-color:rgba(229,72,77,.5)!important; color:#ff8085!important; }
+  #endModal { position:fixed; inset:0; z-index:46; display:none; align-items:center; justify-content:center;
+              background:rgba(0,0,0,.7); padding:20px; }
+  #endModal.show { display:flex; }
+  #endModal .box { width:100%; max-width:360px; background:var(--bg2); border:1px solid var(--line); border-radius:18px; padding:20px; }
+  #endModal h2 { font-size:19px; margin-bottom:6px; }
+  #endModal .sum { color:var(--muted); font-size:14px; margin-bottom:16px; line-height:1.5; }
+  #endModal button { display:block; width:100%; height:52px; margin-top:8px; border-radius:12px; font-size:16px; font-weight:700;
+                     border:1px solid var(--line); background:var(--surface); color:var(--text); }
+  #endModal .primary { background:var(--accent); color:var(--accentTxt); border:none; }
+  #endModal .danger { background:rgba(229,72,77,.14); border-color:rgba(229,72,77,.55); color:#ff8085; }
+  #endModal .note { font-size:12px; color:var(--muted); text-align:center; margin-top:10px; min-height:16px; }
 </style>
 </head>
 <body>
@@ -227,7 +243,8 @@
 <main>
   <!-- MODE 1 -->
   <section class="view active" id="strategy">
-    <div class="stats"><span>Hands: <b id="hands">0</b></span><span>Errors: <b id="errs">0</b></span><span>Accuracy: <b id="acc">–</b></span><button class="revBtn" id="overlapBtn">Overlap</button><button class="revBtn" id="reviewBtn">Review</button></div>
+    <div class="stats"><span>Hands: <b id="hands">0</b></span><span>Errors: <b id="errs">0</b></span><span>Accuracy: <b id="acc">–</b></span></div>
+    <div class="toolbar"><button class="revBtn" id="overlapBtn">Overlap</button><button class="revBtn" id="reviewBtn">Review</button><button class="revBtn endBtn" id="endBtn">End Session</button></div>
     <div class="label">Dealer</div>
     <div class="row" id="dealerRow"></div>
     <div class="label">Player</div>
@@ -275,8 +292,20 @@
   <div class="sum" id="revSum"></div>
   <div id="errList"></div>
   <div class="bar">
-    <button id="revClear" style="background:#d63031;color:#fff">Reset Stats</button>
+    <button id="revClear" style="background:#d63031;color:#fff">End Session</button>
     <button id="revClose" style="background:#e8c547;color:#222">Close</button>
+  </div>
+</div>
+
+<div id="endModal">
+  <div class="box">
+    <h2>End Session</h2>
+    <div class="sum" id="endSum"></div>
+    <button class="primary" id="endExport">Export CSV &amp; Clear</button>
+    <button id="endPrompt">Copy Coaching Prompt</button>
+    <button class="danger" id="endClear">Clear Without Saving</button>
+    <button id="endCancel">Cancel</button>
+    <div class="note" id="endNote"></div>
   </div>
 </div>
 
@@ -428,7 +457,19 @@ function evaluate(p1, p2, up) {
 }
 
 /* ---------- Mode 1 ---------- */
-const errors = []; let handsPlayed = 0;
+const APP_VERSION = '0.5', RULES = '6D-S17-DAS', SESSION_KEY = 'bjSession';
+// Every hand is logged; errors are derived. Session persists in localStorage until ended.
+function newSessionObj() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return { id: `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`,
+           start: d.toISOString(), hands: [] };
+}
+let session = (() => {
+  try { const s = JSON.parse(localStorage.getItem(SESSION_KEY)); if (s && Array.isArray(s.hands)) return s; } catch (e) {}
+  return newSessionObj();
+})();
+function saveSession() { try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) {} }
+const getErrors = () => session.hands.filter(h => !h.correct);
 let hand = null, frozen = false;
 
 function dealHand() {
@@ -440,23 +481,26 @@ function dealHand() {
   document.getElementById('handInfo').textContent = hand.label + ' vs ' + key(up);
 }
 function updateStats() {
-  document.getElementById('hands').textContent = handsPlayed;
-  document.getElementById('errs').textContent = errors.length;
-  document.getElementById('acc').textContent = handsPlayed
-    ? Math.round((handsPlayed - errors.length) / handsPlayed * 100) + '%' : '–';
+  const n = session.hands.length, e = getErrors().length;
+  document.getElementById('hands').textContent = n;
+  document.getElementById('errs').textContent = e;
+  document.getElementById('acc').textContent = n ? Math.round((n - e) / n * 100) + '%' : '–';
 }
 function answer(act) {
   if (frozen || !hand) return;
-  handsPlayed++;
-  if (act === hand.action) {
-    flash('green'); updateStats(); dealHand();
+  const correct = act === hand.action;
+  const total = hand.p1.value + hand.p2.value;
+  session.hands.push({
+    timestamp: new Date().toISOString(), handType: hand.type, handLabel: hand.label,
+    playerHand: `${hand.p1.rank}${hand.p1.suit} ${hand.p2.rank}${hand.p2.suit}`,
+    playerTotal: total === 22 ? 12 : total, dealerUpcard: key(hand.up),
+    userAction: ACT_NAME[act], correctAction: ACT_NAME[hand.action], correct
+  });
+  saveSession(); updateStats();
+  if (correct) {
+    flash('green'); dealHand();
   } else {
-    errors.push({
-      timestamp: new Date().toISOString(), handType: hand.type,
-      playerHand: `${hand.p1.rank}${hand.p1.suit},${hand.p2.rank}${hand.p2.suit}`,
-      dealerUpcard: hand.up.rank, userAction: ACT_NAME[act], correctAction: ACT_NAME[hand.action]
-    });
-    flash('red'); updateStats(); frozen = true;
+    flash('red'); frozen = true;
     document.getElementById('wrongDetail').textContent =
       `${hand.label} vs dealer ${key(hand.up)} — you chose ${ACT_NAME[act]}. Correct play:`;
     document.getElementById('wrongAns').textContent = ACT_NAME[hand.action];
@@ -469,30 +513,89 @@ document.getElementById('wrong').addEventListener('click', () => {
   document.getElementById('wrong').classList.remove('show');
   frozen = false; dealHand();
 });
-window.bjErrors = errors; // inspect from console
+window.bjSession = () => session; // inspect from console
 
 /* ---------- Error review screen ---------- */
 const reviewEl = document.getElementById('review');
 function renderReview() {
-  const byType = { Pair:0, Soft:0, Hard:0 };
+  const errors = getErrors(), byType = { Pair:0, Soft:0, Hard:0 };
   errors.forEach(e => byType[e.handType]++);
   document.getElementById('revSum').textContent =
-    `${handsPlayed} hands · ${errors.length} errors · Pair ${byType.Pair} / Soft ${byType.Soft} / Hard ${byType.Hard}`;
+    `${session.hands.length} hands · ${errors.length} errors · Pair ${byType.Pair} / Soft ${byType.Soft} / Hard ${byType.Hard}`;
   const list = document.getElementById('errList');
   if (!errors.length) { list.innerHTML = '<div class="empty">No mistakes yet. Nice!</div>'; return; }
   list.innerHTML = errors.slice().reverse().map(e => `
     <div class="err">
-      <div class="top"><span>${e.handType}: ${e.playerHand} vs ${e.dealerUpcard}</span>
+      <div class="top"><span>${e.handLabel || e.handType}: ${e.playerHand} vs ${e.dealerUpcard}</span>
         <span class="t">${new Date(e.timestamp).toLocaleTimeString()}</span></div>
       You: <span class="bad">${e.userAction}</span> · Correct: <span class="ok">${e.correctAction}</span>
     </div>`).join('');
 }
 document.getElementById('reviewBtn').addEventListener('click', () => { renderReview(); reviewEl.classList.add('show'); });
 document.getElementById('revClose').addEventListener('click', () => reviewEl.classList.remove('show'));
-document.getElementById('revClear').addEventListener('click', () => {
-  if (!confirm('Reset hands played and clear all errors?')) return;
-  errors.length = 0; handsPlayed = 0; updateStats(); renderReview();
+document.getElementById('revClear').addEventListener('click', () => { reviewEl.classList.remove('show'); openEnd(); });
+
+/* ---------- End Session: export / coach / clear ---------- */
+const endModal = document.getElementById('endModal'), endNote = document.getElementById('endNote');
+function openEnd() {
+  const n = session.hands.length, e = getErrors().length;
+  document.getElementById('endSum').innerHTML = n
+    ? `${n} hands · ${e} errors · ${Math.round((n - e) / n * 100)}% accuracy<br>Started ${new Date(session.start).toLocaleString()}`
+    : 'No hands played this session yet.';
+  endNote.textContent = '';
+  endModal.classList.add('show');
+}
+function closeEnd() { endModal.classList.remove('show'); }
+function clearSession() { session = newSessionObj(); saveSession(); updateStats(); closeEnd(); dealHand(); }
+
+const csvCell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+function buildCSV() {
+  const head = ['session_id','timestamp','hand_type','hand_label','player_hand','player_total','dealer_upcard',
+                'user_action','correct_action','correct','rules','app_version'];
+  const rows = session.hands.map(h => [session.id, h.timestamp, h.handType, h.handLabel, h.playerHand, h.playerTotal,
+    h.dealerUpcard, h.userAction, h.correctAction, h.correct ? 'Y' : 'N', RULES, APP_VERSION]);
+  return [head, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+function csvName() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `blackjack-strategy-session-${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.csv`;
+}
+function downloadFallback(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+document.getElementById('endExport').addEventListener('click', () => {
+  if (!session.hands.length) { endNote.textContent = 'Nothing to export yet.'; return; }
+  const name = csvName(), blob = new Blob([buildCSV()], { type: 'text/csv' });
+  const file = new File([blob], name, { type: 'text/csv' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: name })            // iOS share sheet: Files, AirDrop, Gemini…
+      .then(() => clearSession())
+      .catch(err => { endNote.textContent = err && err.name === 'AbortError'
+        ? 'Export cancelled. Session kept.' : 'Share failed. Session kept.'; });
+  } else {
+    downloadFallback(blob, name);
+    endNote.textContent = 'Downloaded ' + name;
+    setTimeout(clearSession, 800);
+  }
 });
+const COACH_PROMPT = `I'm practicing blackjack basic strategy for a 6-deck, dealer stands on soft 17, double after split game. ` +
+  `Attached is a CSV of my practice session(s); each row is one hand with my action and the correct action. Please:\n` +
+  `1. Summarize my overall accuracy and accuracy by hand type (hard, soft, pairs).\n` +
+  `2. Identify my weakest specific situations (player hand vs dealer upcard), including how many times each was seen.\n` +
+  `3. Look for patterns in my mistakes (e.g., too passive, too aggressive, missed doubles or splits).\n` +
+  `4. Explain the reasoning behind the correct play for my top 5 recurring mistakes.\n` +
+  `5. Suggest a focused drill plan for my next sessions. If multiple sessions are included, show my progress over time.`;
+document.getElementById('endPrompt').addEventListener('click', () => {
+  const done = () => endNote.textContent = 'Coaching prompt copied. Paste it into Gemini with your CSV.';
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(COACH_PROMPT).then(done, () => prompt('Copy this prompt:', COACH_PROMPT));
+  else prompt('Copy this prompt:', COACH_PROMPT);
+});
+document.getElementById('endClear').addEventListener('click', () => {
+  if (confirm('Permanently clear this session without saving? This cannot be undone.')) clearSession();
+});
+document.getElementById('endCancel').addEventListener('click', closeEnd);
+document.getElementById('endBtn').addEventListener('click', openEnd);
 
 /* ---------- Mode 2 ---------- */
 const speedEl = document.getElementById('speed'), speedLbl = document.getElementById('speedLbl');
@@ -565,7 +668,7 @@ function setOverlap(on) {
 setOverlap((() => { try { return localStorage.getItem('bjOverlap') !== '0'; } catch (e) { return true; } })());
 overlapBtn.addEventListener('click', () => setOverlap(!playerRowEl.classList.contains('overlap')));
 
-newShoe(); dealHand();
+newShoe(); updateStats(); dealHand();
 })();
 </script>
 </body>
