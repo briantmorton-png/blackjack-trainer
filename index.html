@@ -211,9 +211,21 @@
   #playerRow.overlap .card + .card { margin-left:-56px; margin-top:26px; transform:rotate(4deg); }
   #playerRow.overlap .card:first-child { transform:rotate(-3deg); }
 
-  /* Toolbar + End Session modal */
+  /* Toolbar + Focus filter + End Session modal */
   .toolbar { display:flex; gap:8px; justify-content:center; margin-top:8px; }
   .toolbar .revBtn { flex:1; max-width:130px; padding:8px 6px; }
+  .focusBar { display:flex; gap:3px; margin:6px auto 0; width:100%; max-width:406px; padding:3px;
+              background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+  .fBtn { flex:1; background:transparent; border:1px solid transparent; border-radius:7px; color:var(--muted);
+          font-size:12px; font-weight:700; padding:6px 4px; }
+  .fBtn.active { background:rgba(45,212,191,.16); color:var(--accent); border-color:rgba(45,212,191,.45); }
+  @media (max-height:760px) {
+    .label { margin:4px 0 3px; font-size:11px; }
+    .info { margin-top:4px; font-size:13px; }
+    .card:not(.big) { width:84px; height:118px; font-size:17px; }
+    #playerRow.overlap .card + .card { margin-left:-46px; margin-top:18px; }
+    .actions button { height:64px; font-size:20px; }
+  }
   .endBtn { border-color:rgba(229,72,77,.5)!important; color:#ff8085!important; }
   #endModal { position:fixed; inset:0; z-index:46; display:none; align-items:center; justify-content:center;
               background:rgba(0,0,0,.7); padding:20px; }
@@ -245,6 +257,12 @@
   <section class="view active" id="strategy">
     <div class="stats"><span>Hands: <b id="hands">0</b></span><span>Errors: <b id="errs">0</b></span><span>Accuracy: <b id="acc">–</b></span></div>
     <div class="toolbar"><button class="revBtn" id="overlapBtn">Overlap</button><button class="revBtn" id="reviewBtn">Review</button><button class="revBtn endBtn" id="endBtn">End Session</button></div>
+    <div class="focusBar" id="focusBar" role="group" aria-label="Hand category focus">
+      <button class="fBtn active" data-focus="All">All</button>
+      <button class="fBtn" data-focus="Hard">Hard</button>
+      <button class="fBtn" data-focus="Soft">Soft</button>
+      <button class="fBtn" data-focus="Pair">Pairs</button>
+    </div>
     <div class="label">Dealer</div>
     <div class="row" id="dealerRow"></div>
     <div class="label">Player</div>
@@ -457,7 +475,12 @@ function evaluate(p1, p2, up) {
 }
 
 /* ---------- Mode 1 ---------- */
-const APP_VERSION = '0.5', RULES = '6D-S17-DAS', SESSION_KEY = 'bjSession';
+const APP_VERSION = '0.6', RULES = '6D-S17-DAS', SESSION_KEY = 'bjSession', FOCUS_KEY = 'bjFocus';
+const FOCUS_MODES = ['All', 'Hard', 'Soft', 'Pair'];
+let focusMode = (() => {
+  try { const f = localStorage.getItem(FOCUS_KEY); if (FOCUS_MODES.includes(f)) return f; } catch (e) {}
+  return 'All';
+})();
 // Every hand is logged; errors are derived. Session persists in localStorage until ended.
 function newSessionObj() {
   const d = new Date(), p = n => String(n).padStart(2, '0');
@@ -472,9 +495,80 @@ function saveSession() { try { localStorage.setItem(SESSION_KEY, JSON.stringify(
 const getErrors = () => session.hands.filter(h => !h.correct);
 let hand = null, frozen = false;
 
-function dealHand() {
+function pullAt(idx) {
+  [shoe.cards[shoe.pos], shoe.cards[idx]] = [shoe.cards[idx], shoe.cards[shoe.pos]];
+  return draw();
+}
+function remIdx(pred) {
+  const out = [];
+  for (let i = shoe.pos; i < shoe.cards.length; i++) if (!pred || pred(shoe.cards[i])) out.push(i);
+  return out;
+}
+function dealCards(mode) {
   if (atCut() || remaining() < 3) newShoe();
-  const p1 = draw(), up = draw(), p2 = draw();
+  if (mode === 'All') { const p1 = draw(), up = draw(), p2 = draw(); return { p1, p2, up }; }
+  if (mode === 'Soft') {
+    let aces = remIdx(c => c.value === 11), nonAces = remIdx(c => c.value !== 11);
+    if (aces.length < 1 || nonAces.length < 1 || remaining() < 3) {
+      newShoe(); aces = remIdx(c => c.value === 11);
+    }
+    const aCard = pullAt(aces[cryptoInt(aces.length)]);
+    nonAces = remIdx(c => c.value !== 11);
+    const bCard = pullAt(nonAces[cryptoInt(nonAces.length)]);
+    const up = pullAt(shoe.pos + cryptoInt(remaining()));
+    const [p1, p2] = cryptoInt(2) ? [aCard, bCard] : [bCard, aCard];
+    return { p1, p2, up };
+  }
+  if (mode === 'Pair') {
+    const pairVals = () => {
+      const cnt = {};
+      for (let i = shoe.pos; i < shoe.cards.length; i++) { const v = shoe.cards[i].value; cnt[v] = (cnt[v] || 0) + 1; }
+      return Object.keys(cnt).filter(v => cnt[v] >= 2).map(Number);
+    };
+    let vals = pairVals();
+    if (!vals.length || remaining() < 3) { newShoe(); vals = pairVals(); }
+    const v = vals[cryptoInt(vals.length)];
+    let pool = remIdx(c => c.value === v);
+    const p1 = pullAt(pool[cryptoInt(pool.length)]);
+    pool = remIdx(c => c.value === v);
+    const p2 = pullAt(pool[cryptoInt(pool.length)]);
+    const up = pullAt(shoe.pos + cryptoInt(remaining()));
+    return { p1, p2, up };
+  }
+  // Hard: two non-Ace cards with different blackjack values
+  let nonAces = remIdx(c => c.value !== 11);
+  if (remaining() < 3 || new Set(nonAces.map(i => shoe.cards[i].value)).size < 2) {
+    newShoe(); nonAces = remIdx(c => c.value !== 11);
+  }
+  let a, b, tries = 0;
+  do {
+    a = nonAces[cryptoInt(nonAces.length)];
+    b = nonAces[cryptoInt(nonAces.length)];
+  } while (shoe.cards[a].value === shoe.cards[b].value && ++tries < 40);
+  const cardB = shoe.cards[a].value !== shoe.cards[b].value ? shoe.cards[b] : null;
+  const p1 = pullAt(a);
+  let p2;
+  if (cardB) {
+    p2 = pullAt(shoe.cards.indexOf(cardB, shoe.pos));
+  } else {
+    const rest = remIdx(c => c.value !== 11 && c.value !== p1.value);
+    p2 = pullAt(rest[cryptoInt(rest.length)]);
+  }
+  const up = pullAt(shoe.pos + cryptoInt(remaining()));
+  return { p1, p2, up };
+}
+function setFocus(mode, redeal) {
+  if (!FOCUS_MODES.includes(mode)) return;
+  focusMode = mode;
+  try { localStorage.setItem(FOCUS_KEY, mode); } catch (e) {}
+  document.querySelectorAll('#focusBar .fBtn').forEach(b => b.classList.toggle('active', b.dataset.focus === mode));
+  if (redeal && !frozen && (!hand || (mode !== 'All' && hand.type !== mode))) dealHand();
+}
+document.querySelectorAll('#focusBar .fBtn').forEach(b =>
+  b.addEventListener('click', () => setFocus(b.dataset.focus, true)));
+
+function dealHand() {
+  const { p1, p2, up } = dealCards(focusMode);
   hand = { p1, p2, up, ...evaluate(p1, p2, up) };
   document.getElementById('dealerRow').innerHTML = cardHTML(up);
   document.getElementById('playerRow').innerHTML = cardHTML(p1) + cardHTML(p2);
@@ -668,6 +762,7 @@ function setOverlap(on) {
 setOverlap((() => { try { return localStorage.getItem('bjOverlap') !== '0'; } catch (e) { return true; } })());
 overlapBtn.addEventListener('click', () => setOverlap(!playerRowEl.classList.contains('overlap')));
 
+setFocus(focusMode, false);
 newShoe(); updateStats(); dealHand();
 })();
 </script>
