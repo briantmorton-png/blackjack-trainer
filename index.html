@@ -162,12 +162,15 @@
   .revBtn { background:var(--surface); border:1px solid var(--line); color:var(--text); }
   .revBtn.on { border-color:var(--accent); color:var(--accent); }
 
-  .actions button { border-radius:14px; box-shadow:none; font-weight:800; border:1.5px solid; }
+  .actions { gap:8px; }
+  .actions button { height:72px; font-size:22px; border-radius:14px; box-shadow:none; font-weight:800; border:1.5px solid; }
   .actions button:active { transform:scale(.97); box-shadow:none; filter:brightness(1.3); }
   .hit   { background:rgba(229,72,77,.16);  border-color:rgba(229,72,77,.6)!important;  color:#ff8085!important; }
   .stand { background:rgba(59,130,246,.16); border-color:rgba(59,130,246,.6)!important; color:#8dbbff!important; }
   .double{ background:rgba(34,197,94,.16);  border-color:rgba(34,197,94,.6)!important;  color:#6ee7a0!important; }
   .split { background:rgba(234,179,8,.16);  border-color:rgba(234,179,8,.6)!important;  color:#f5d35a!important; }
+  .surrender { grid-column:1 / -1; height:52px!important; font-size:18px!important; letter-spacing:1.5px;
+               background:rgba(168,85,247,.16); border-color:rgba(168,85,247,.6)!important; color:#cf9fff!important; }
 
   #wrong { background:rgba(11,14,19,.94); }
   #wrong h2 { color:var(--hit); letter-spacing:1px; text-transform:uppercase; font-size:16px; }
@@ -220,11 +223,18 @@
           font-size:12px; font-weight:700; padding:6px 4px; }
   .fBtn.active { background:rgba(45,212,191,.16); color:var(--accent); border-color:rgba(45,212,191,.45); }
   @media (max-height:760px) {
-    .label { margin:4px 0 3px; font-size:11px; }
-    .info { margin-top:4px; font-size:13px; }
-    .card:not(.big) { width:84px; height:118px; font-size:17px; }
-    #playerRow.overlap .card + .card { margin-left:-46px; margin-top:18px; }
-    .actions button { height:64px; font-size:20px; }
+    .view { padding:8px 12px; }
+    .toolbar { margin-top:5px; }
+    .toolbar .revBtn { padding:6px 5px; }
+    .focusBar { margin-top:5px; }
+    .fBtn { padding:5px 4px; }
+    .label { margin:3px 0 2px; font-size:11px; }
+    .info { margin-top:4px; font-size:13px; min-height:16px; }
+    .card:not(.big) { width:78px; height:110px; font-size:16px; }
+    #playerRow.overlap .card + .card { margin-left:-42px; margin-top:16px; }
+    .actions { gap:6px; }
+    .actions button { height:56px; font-size:19px; }
+    .actions .surrender { height:42px!important; font-size:15px!important; }
   }
   .endBtn { border-color:rgba(229,72,77,.5)!important; color:#ff8085!important; }
   #endModal { position:fixed; inset:0; z-index:46; display:none; align-items:center; justify-content:center;
@@ -273,6 +283,7 @@
       <button class="stand" data-act="S">STAND</button>
       <button class="double" data-act="D">DOUBLE</button>
       <button class="split" data-act="P">SPLIT</button>
+      <button class="surrender" data-act="R">SURRENDER</button>
     </div>
   </section>
 
@@ -413,8 +424,8 @@ function flash(color) {
   requestAnimationFrame(() => requestAnimationFrame(() => { flashEl.className = ''; }));
 }
 
-/* ---------- Strategy table: 6D, S17, DAS. Columns = dealer 2..10, A ---------- */
-// H=Hit S=Stand D=Double P=Split
+/* ---------- Strategy table: 6D, S17, DAS, Late Surrender. Columns = dealer 2..10, A ---------- */
+// H=Hit S=Stand D=Double P=Split R=Surrender
 const DEALER = ['2','3','4','5','6','7','8','9','10','A'];
 const row = s => Object.fromEntries(s.split(' ').map((a, i) => [DEALER[i], a]));
 const STRATEGY = {
@@ -442,8 +453,8 @@ const STRATEGY = {
   },
   hard: {
     '17': row('S S S S S S S S S S'),
-    '16': row('S S S S S H H H H H'),
-    '15': row('S S S S S H H H H H'),
+    '16': row('S S S S S H H R R R'),
+    '15': row('S S S S S H H H R H'),
     '14': row('S S S S S H H H H H'),
     '13': row('S S S S S H H H H H'),
     '12': row('H H S S S H H H H H'),
@@ -453,7 +464,7 @@ const STRATEGY = {
     '8':  row('H H H H H H H H H H')
   }
 };
-const ACT_NAME = { H:'HIT', S:'STAND', D:'DOUBLE', P:'SPLIT' };
+const ACT_NAME = { H:'HIT', S:'STAND', D:'DOUBLE', P:'SPLIT', R:'SURRENDER' };
 const key = c => c.value === 11 ? 'A' : String(c.value);
 
 function evaluate(p1, p2, up) {
@@ -475,7 +486,7 @@ function evaluate(p1, p2, up) {
 }
 
 /* ---------- Mode 1 ---------- */
-const APP_VERSION = '0.6', RULES = '6D-S17-DAS', SESSION_KEY = 'bjSession', FOCUS_KEY = 'bjFocus';
+const APP_VERSION = '0.7', RULES = '6D-S17-DAS-LS', SESSION_KEY = 'bjSession', FOCUS_KEY = 'bjFocus';
 const FOCUS_MODES = ['All', 'Hard', 'Soft', 'Pair'];
 let focusMode = (() => {
   try { const f = localStorage.getItem(FOCUS_KEY); if (FOCUS_MODES.includes(f)) return f; } catch (e) {}
@@ -588,7 +599,7 @@ function answer(act) {
     timestamp: new Date().toISOString(), handType: hand.type, handLabel: hand.label,
     playerHand: `${hand.p1.rank}${hand.p1.suit} ${hand.p2.rank}${hand.p2.suit}`,
     playerTotal: total === 22 ? 12 : total, dealerUpcard: key(hand.up),
-    userAction: ACT_NAME[act], correctAction: ACT_NAME[hand.action], correct
+    userAction: ACT_NAME[act], correctAction: ACT_NAME[hand.action], correct, rules: RULES
   });
   saveSession(); updateStats();
   if (correct) {
@@ -647,7 +658,7 @@ function buildCSV() {
   const head = ['session_id','timestamp','hand_type','hand_label','player_hand','player_total','dealer_upcard',
                 'user_action','correct_action','correct','rules','app_version'];
   const rows = session.hands.map(h => [session.id, h.timestamp, h.handType, h.handLabel, h.playerHand, h.playerTotal,
-    h.dealerUpcard, h.userAction, h.correctAction, h.correct ? 'Y' : 'N', RULES, APP_VERSION]);
+    h.dealerUpcard, h.userAction, h.correctAction, h.correct ? 'Y' : 'N', h.rules || '6D-S17-DAS', APP_VERSION]);
   return [head, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 function csvName() {
@@ -673,11 +684,11 @@ document.getElementById('endExport').addEventListener('click', () => {
     setTimeout(clearSession, 800);
   }
 });
-const COACH_PROMPT = `I'm practicing blackjack basic strategy for a 6-deck, dealer stands on soft 17, double after split game. ` +
+const COACH_PROMPT = `I'm practicing blackjack basic strategy for a 6-deck, dealer stands on soft 17, double after split, late surrender game. ` +
   `Attached is a CSV of my practice session(s); each row is one hand with my action and the correct action. Please:\n` +
   `1. Summarize my overall accuracy and accuracy by hand type (hard, soft, pairs).\n` +
   `2. Identify my weakest specific situations (player hand vs dealer upcard), including how many times each was seen.\n` +
-  `3. Look for patterns in my mistakes (e.g., too passive, too aggressive, missed doubles or splits).\n` +
+  `3. Look for patterns in my mistakes (e.g., too passive, too aggressive, missed doubles, splits, or surrenders).\n` +
   `4. Explain the reasoning behind the correct play for my top 5 recurring mistakes.\n` +
   `5. Suggest a focused drill plan for my next sessions. If multiple sessions are included, show my progress over time.`;
 document.getElementById('endPrompt').addEventListener('click', () => {
